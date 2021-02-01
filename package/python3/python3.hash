@@ -1,0 +1,5 @@
+# From https://www.python.org/downloads/release/python-387/
+md5  60fe018fffc7f33818e6c340d29e2db9  Python-3.8.7.tar.xz
+# Locally computed
+sha256  ddcc1df16bb5b87aa42ec5d20a5b902f2d088caa269b28e01590f97a798ec50a  Python-3.8.7.tar.xz
+sha256  1dceef1677a39befa8bf0285ab2db441ba117520bb2de839547ace006a17750d  LICENSE
