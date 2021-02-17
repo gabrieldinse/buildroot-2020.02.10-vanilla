@@ -2,17 +2,20 @@
 #include <errno.h>
 #include <stdlib.h>
 #include <unistd.h>
+#include <stdint.h>
 #include <pthread.h>
 #include <semaphore.h>
 #include <wiringPi.h>
 
 #define NUM_SAMPLES 100000
 
-unsigned int times_blink[NUM_SAMPLES];
-unsigned int times_interrupt[NUM_SAMPLES];
+intmax_t times_blink[NUM_SAMPLES];
+intmax_t times_interrupt[NUM_SAMPLES];
+struct timespec ts1;
+struct timespec ts2;
 
-int led_pin = 3;
-int interrupt_pin = 5;
+int led_pin = 3; // gpio pin 22
+int interrupt_pin = 5; // gpio pin 24
 
 volatile int interrupt_count = 0;
 
@@ -24,7 +27,8 @@ void *blink_led(void *arg)
     int i;
     for (i = 0; i < NUM_SAMPLES; ++i)
     {
-        times_blink[i] = micros();
+        clock_gettime(CLOCK_MONOTONIC, &ts1);
+        times_blink[i] = ts1.tv_sec * 1e9 + ts1.tv_nsec;
         digitalWrite(led_pin, HIGH);
         delayMicroseconds(250);
         digitalWrite(led_pin, LOW);
@@ -35,7 +39,8 @@ void *blink_led(void *arg)
 
 void led_interrupt(void)
 {
-    times_interrupt[interrupt_count] = micros();
+    clock_gettime(CLOCK_MONOTONIC, &ts2);
+    times_interrupt[interrupt_count] = ts2.tv_sec * 1e9 + ts2.tv_nsec;
     interrupt_count++;
     if (interrupt_count == NUM_SAMPLES)
     {
@@ -44,10 +49,10 @@ void led_interrupt(void)
 }
 
 
-unsigned int* calc_time_diff(unsigned int *times_blink, unsigned int *times_interrupt, int num_of_samples)
+intmax_t* calc_time_diff(intmax_t *times_blink, intmax_t *times_interrupt, int num_of_samples)
 {
     int i;
-    unsigned int *time_diff = (unsigned int *)malloc(NUM_SAMPLES * sizeof(unsigned int));
+    intmax_t *time_diff = (intmax_t *)malloc(NUM_SAMPLES * sizeof(intmax_t));
     for (i = 0; i < num_of_samples; ++i)
     {
         time_diff[i] = times_interrupt[i] - times_blink[i];
@@ -56,9 +61,9 @@ unsigned int* calc_time_diff(unsigned int *times_blink, unsigned int *times_inte
 }
 
 
-unsigned int calc_average_time(int num_of_samples, unsigned int *time_diff)
+intmax_t calc_average_time(int num_of_samples, intmax_t *time_diff)
 {
-    unsigned int average = 0;
+    intmax_t average = 0;
     int i;
     for (i = 0; i < num_of_samples; ++i)
     {
@@ -68,13 +73,14 @@ unsigned int calc_average_time(int num_of_samples, unsigned int *time_diff)
 }
 
 
-void create_time_diffs_csv(char * filename, unsigned int number_of_values,
-                  unsigned int *time_values){
+void create_time_diffs_csv(char * filename, intmax_t number_of_values,
+        intmax_t *time_diff){
     unsigned int n=0;
     FILE *file;
     file = fopen(filename,"w");
-    while (n<number_of_values) {
-       fprintf(file,"%u,%u\n",n,time_values[n]);
+    while (n < number_of_values)
+    {
+       fprintf(file,"%u,%lld\n",n,time_diff[n]);
        n++;
     } 
     fclose(file);
@@ -84,8 +90,8 @@ void create_time_diffs_csv(char * filename, unsigned int number_of_values,
 int main(int argc, char *argv[])
 {
     pthread_t task_led;
-    unsigned int *time_diff;
-    unsigned int average;
+    intmax_t *time_diff;
+    intmax_t average;
 
     if (wiringPiSetup() < 0)
     {
@@ -94,6 +100,7 @@ int main(int argc, char *argv[])
     }
     
     pinMode(led_pin, OUTPUT);
+    digitalWrite(led_pin, LOW);
 
     if (wiringPiISR(interrupt_pin, INT_EDGE_RISING, &led_interrupt))
     {
@@ -115,5 +122,5 @@ int main(int argc, char *argv[])
     printf("Calculating average...\n");
     average = calc_average_time(NUM_SAMPLES, time_diff);
     free(time_diff);
-    printf("Average: %u\n", average);
+    printf("Average: %lld\n", average);
 }
