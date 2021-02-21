@@ -1,6 +1,6 @@
 TOOLCHAIN=$(BASE_DIR)/host/bin
-CC := $(TOOLCHAIN)/arm-buildroot-linux-uclibcgnueabihf-gcc
-CFLAGS := -lpthread -lwiringPi
+CC := $(TOOLCHAIN)/arm-linux-gnueabihf-gcc
+CFLAGS := -lpthread -lgpiod
 
 OUTPUT := jitter_and_latency
 

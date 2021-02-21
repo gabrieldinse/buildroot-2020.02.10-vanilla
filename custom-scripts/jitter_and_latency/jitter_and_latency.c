@@ -3,23 +3,38 @@
 #include <stdlib.h>
 #include <unistd.h>
 #include <stdint.h>
+#include <time.h>
+
 #include <pthread.h>
 #include <semaphore.h>
-#include <wiringPi.h>
+
+#include <gpiod.h>
+
 
 #define NUM_SAMPLES 100000
 
+#ifndef CONSUMER
+#define CONSUMER "Consumer"
+#endif
+
+
 intmax_t times_blink[NUM_SAMPLES];
 intmax_t times_interrupt[NUM_SAMPLES];
+struct timespec sleep_amount = {0, 250000L}; // 250us
+struct timespec interrupt_timeout = {3, 0L};
 struct timespec ts1;
 struct timespec ts2;
 
-int led_pin = 3; // gpio pin 22
-int interrupt_pin = 5; // gpio pin 24
+const char *chipname = "gpiochip0";
+struct gpiod_chip *chip;
+struct gpiod_line *led;
+struct gpiod_line *interrupt;
+struct gpiod_line_event event;
+
+int led_pin = 22; // gpio pin 22
+int interrupt_pin = 24; // gpio pin 24
 
 volatile int interrupt_count = 0;
-
-sem_t sem;
 
 
 void *blink_led(void *arg)
@@ -28,23 +43,50 @@ void *blink_led(void *arg)
     for (i = 0; i < NUM_SAMPLES; ++i)
     {
         clock_gettime(CLOCK_MONOTONIC, &ts1);
+        gpiod_line_set_value(led, 1);
         times_blink[i] = ts1.tv_sec * 1e9 + ts1.tv_nsec;
-        digitalWrite(led_pin, HIGH);
-        delayMicroseconds(250);
-        digitalWrite(led_pin, LOW);
-        delayMicroseconds(250);
+        nanosleep(&sleep_amount, NULL);
+        gpiod_line_set_value(led, 0);
+        nanosleep(&sleep_amount, NULL);
     }
 }
 
 
-void led_interrupt(void)
+void *led_interrupt(void *arg)
 {
-    clock_gettime(CLOCK_MONOTONIC, &ts2);
-    times_interrupt[interrupt_count] = ts2.tv_sec * 1e9 + ts2.tv_nsec;
-    interrupt_count++;
-    if (interrupt_count == NUM_SAMPLES)
+    int ret, i;
+
+    while (1)
     {
-        sem_post(&sem);
+        ret = gpiod_line_event_wait(interrupt, &interrupt_timeout);
+        clock_gettime(CLOCK_MONOTONIC, &ts2);
+        if (ret > 0)
+        {
+            ret = gpiod_line_event_read(interrupt, &event);
+            if (ret < 0)
+            {
+                perror("Error: reading last GPIO interrupt failed\n");
+                gpiod_line_release(interrupt);
+                gpiod_line_release(led);
+                gpiod_chip_close(chip);
+            }
+
+            times_interrupt[interrupt_count] = ts2.tv_sec * 1e9 + ts2.tv_nsec;
+            interrupt_count++;
+        }
+        else if (ret == 0)
+        {
+            printf("No more interrupts to read (timeout)...\n");
+            break;
+        }
+        else if (ret < 0)
+        {
+            perror("Error: waiting for event notification failed\n");
+            gpiod_line_release(interrupt);
+            gpiod_line_release(led);
+            gpiod_chip_close(chip);
+            exit(1);
+        }
     }
 }
 
@@ -87,33 +129,68 @@ void create_time_diffs_csv(char * filename, intmax_t number_of_values,
 }
 
 
+void setup()
+{
+    int ret;
+
+    chip = gpiod_chip_open_by_name(chipname);
+    if (!chip)
+    {
+        perror("Error: Opening chip GPIO failed\n");
+        exit(1);
+    }
+
+    led = gpiod_chip_get_line(chip, led_pin);
+    if (!led)
+    {
+        perror("error: getting gpio led line failed\n");
+        gpiod_chip_close(chip);
+        exit(1);
+    }
+
+    interrupt = gpiod_chip_get_line(chip, interrupt_pin);
+    if (!interrupt)
+    {
+        perror("error: getting gpio interrupt line failed\n");
+        gpiod_chip_close(chip);
+        exit(1);
+    }
+
+    ret = gpiod_line_request_output(led, CONSUMER, 0);
+    if (ret < 0)
+    {
+        perror("Error: requesting led line as output failed\n");
+        gpiod_line_release(led);
+        gpiod_chip_close(chip);
+        exit(1);
+    }
+
+    ret = gpiod_line_request_rising_edge_events(interrupt, CONSUMER);
+    if (ret < 0)
+    {
+        perror("Error: requesting interrupt failed\n");
+        gpiod_line_release(interrupt);
+        gpiod_line_release(led);
+        gpiod_chip_close(chip);
+        exit(1);
+    }
+}
+
+
 int main(int argc, char *argv[])
 {
     pthread_t task_led;
+    pthread_t task_interrupt;
     intmax_t *time_diff;
     intmax_t average;
 
-    if (wiringPiSetup() < 0)
-    {
-        fprintf(stderr, "Unable to setup wiringPi: %s\n", strerror (errno));
-        return 1;
-    }
+    setup();
     
-    pinMode(led_pin, OUTPUT);
-    digitalWrite(led_pin, LOW);
-
-    if (wiringPiISR(interrupt_pin, INT_EDGE_RISING, &led_interrupt))
-    {
-        fprintf(stderr, "Unable to setup ISR: %s\n", strerror (errno));
-        return 1;
-    }
-
-    sem_init(&sem, 0, 0);
-
+    pthread_create(&task_interrupt, NULL, led_interrupt, NULL);
     pthread_create(&task_led, NULL, blink_led, NULL);
     printf("Started blinking led...\n");
     pthread_join(task_led, NULL);
-    sem_wait(&sem);
+    pthread_join(task_interrupt, NULL);
 
     printf("Calculating time differences...\n");
     time_diff = calc_time_diff(times_blink, times_interrupt, NUM_SAMPLES);
@@ -123,4 +200,9 @@ int main(int argc, char *argv[])
     average = calc_average_time(NUM_SAMPLES, time_diff);
     free(time_diff);
     printf("Average: %lld\n", average);
+
+    gpiod_line_release(interrupt);
+    gpiod_line_release(led);
+    gpiod_chip_close(chip);
+    return 0;
 }
