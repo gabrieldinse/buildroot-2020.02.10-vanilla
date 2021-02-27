@@ -195,7 +195,7 @@ int main(int argc, char *argv[])
     printf("Calculating time differences...\n");
     time_diff = calc_time_diff(times_blink, times_interrupt, NUM_SAMPLES);
     printf("Writing time differentes to csv...\n");
-    create_time_diffs_csv("/root/time_diff.csv", NUM_SAMPLES, time_diff);
+    create_time_diffs_csv("/root/time_diff_vanilla.csv", NUM_SAMPLES, time_diff);
     printf("Calculating average...\n");
     average = calc_average_time(NUM_SAMPLES, time_diff);
     free(time_diff);
