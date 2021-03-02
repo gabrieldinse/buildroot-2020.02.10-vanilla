@@ -20,10 +20,6 @@
 
 intmax_t times_blink[NUM_SAMPLES];
 intmax_t times_interrupt[NUM_SAMPLES];
-struct timespec sleep_amount = {0, 250000L}; // 250us
-struct timespec interrupt_timeout = {3, 0L};
-struct timespec ts1;
-struct timespec ts2;
 
 const char *chipname = "gpiochip0";
 struct gpiod_chip *chip;
@@ -34,12 +30,13 @@ struct gpiod_line_event event;
 int led_pin = 22; // gpio pin 22
 int interrupt_pin = 24; // gpio pin 24
 
-volatile int interrupt_count = 0;
-
 
 void *blink_led(void *arg)
 {
     int i;
+    struct timespec ts1;
+    struct timespec sleep_amount = {0, 250000L}; // 250us
+
     for (i = 0; i < NUM_SAMPLES; ++i)
     {
         clock_gettime(CLOCK_MONOTONIC, &ts1);
@@ -54,7 +51,9 @@ void *blink_led(void *arg)
 
 void *led_interrupt(void *arg)
 {
-    int ret, i;
+    int ret, i, interrupt_count = 0;
+    struct timespec ts2;
+    struct timespec interrupt_timeout = {3, 0L};
 
     while (1)
     {
