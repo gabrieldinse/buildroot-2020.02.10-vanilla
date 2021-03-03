@@ -27,23 +27,22 @@ struct gpiod_line *led;
 struct gpiod_line *interrupt;
 struct gpiod_line_event event;
 
-int led_pin = 22; // gpio pin 22
-int interrupt_pin = 24; // gpio pin 24
+int led_pin = 22; 
+int interrupt_pin = 24; 
 
 
 void *blink_led(void *arg)
 {
-    int i;
-    struct timespec ts1;
-    struct timespec sleep_amount = {0, 250000L}; // 250us
+    int i, value = 1;
+    struct timespec ts;
+    struct timespec sleep_amount = {0, 1000000L}; // 1ms
 
     for (i = 0; i < NUM_SAMPLES; ++i)
     {
-        clock_gettime(CLOCK_MONOTONIC, &ts1);
-        gpiod_line_set_value(led, 1);
-        times_blink[i] = ts1.tv_sec * 1e9 + ts1.tv_nsec;
-        nanosleep(&sleep_amount, NULL);
-        gpiod_line_set_value(led, 0);
+        clock_gettime(CLOCK_MONOTONIC, &ts);
+        gpiod_line_set_value(led, value);
+        times_blink[i] = ts.tv_sec * 1e9 + ts.tv_nsec;
+        value = !value;
         nanosleep(&sleep_amount, NULL);
     }
 }
@@ -51,14 +50,14 @@ void *blink_led(void *arg)
 
 void *led_interrupt(void *arg)
 {
-    int ret, i, interrupt_count = 0;
-    struct timespec ts2;
+    int ret, interrupt_count = 0;
+    struct timespec ts;
     struct timespec interrupt_timeout = {3, 0L};
 
     while (1)
     {
         ret = gpiod_line_event_wait(interrupt, &interrupt_timeout);
-        clock_gettime(CLOCK_MONOTONIC, &ts2);
+        clock_gettime(CLOCK_MONOTONIC, &ts);
         if (ret > 0)
         {
             ret = gpiod_line_event_read(interrupt, &event);
@@ -70,7 +69,7 @@ void *led_interrupt(void *arg)
                 gpiod_chip_close(chip);
             }
 
-            times_interrupt[interrupt_count] = ts2.tv_sec * 1e9 + ts2.tv_nsec;
+            times_interrupt[interrupt_count] = ts.tv_sec * 1e9 + ts.tv_nsec;
             interrupt_count++;
         }
         else if (ret == 0)
@@ -164,7 +163,7 @@ void setup_gpio()
         exit(1);
     }
 
-    ret = gpiod_line_request_rising_edge_events(interrupt, CONSUMER);
+    ret = gpiod_line_request_both_edges_events(interrupt, CONSUMER);
     if (ret < 0)
     {
         perror("Error: requesting interrupt failed\n");
