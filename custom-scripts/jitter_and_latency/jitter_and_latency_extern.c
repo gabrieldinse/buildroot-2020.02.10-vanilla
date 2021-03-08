@@ -4,7 +4,7 @@
 #include <unistd.h>
 #include <stdint.h>
 #include <time.h>
-
+#include <sched.h>
 #include <pthread.h>
 
 #include <gpiod.h>
@@ -28,6 +28,9 @@ int interrupt_pin = 24;
 void *led_interrupt(void *arg)
 {
     int ret, value = 0;
+    struct sched_param param = { .sched_priority = 99 };
+    
+    ret = sched_setscheduler(getpid(), SCHED_RR, &param);
 
     while (1)
     {
