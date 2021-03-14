@@ -7,6 +7,8 @@
 #include <sched.h>
 #include <pthread.h>
 
+#include <sys/mman.h>
+
 #include <gpiod.h>
 
 
@@ -27,7 +29,7 @@ int interrupt_pin = 24;
 
 void *led_interrupt(void *arg)
 {
-    int ret, value = 0;
+    int ret, value = 1;
     struct sched_param param = { .sched_priority = 99 };
     
     ret = sched_setscheduler(getpid(), SCHED_RR, &param);
@@ -120,6 +122,8 @@ void setup_gpio()
 int main(int argc, char *argv[])
 {
     pthread_t task_interrupt;
+
+    mlockall(MCL_CURRENT | MCL_FUTURE);
 
     setup_gpio();
     
